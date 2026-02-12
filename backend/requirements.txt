@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+langgraph
+langchain-anthropic
+langchain-community
+tavily-python
+markdown2
+weasyprint
+python-docx
+python-dotenv
