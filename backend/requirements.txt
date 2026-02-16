@@ -1,11 +1,12 @@
 fastapi
 uvicorn
+langchain
 langgraph
 langchain-anthropic
-langchain-community
+anthropic
 tavily-python
-markdown2
-weasyprint
-python-docx
-python-dotenv
 pypdf
+python-multipart
+python-docx
+reportlab
+weasyprint
