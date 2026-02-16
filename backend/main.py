@@ -95,7 +95,7 @@ graph = builder.compile()
 # --- API ENDPOINTS ---
 reports_db = {}
 
-@app.post("/generate")
+@app.post("/research")
 async def generate_report(target: str, mine: str):
     try:
         inputs = {"target_company": target, "my_company": mine, "research_data": []}
