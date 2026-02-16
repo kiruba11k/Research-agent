@@ -5,7 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Cpu, Download, Loader2, FileText } from 'lucide-react';
 import axios from 'axios';
 
-const API_BASE = "https://your-backend-url.onrender.com"; // Change after deployment
+const API_BASE = "https://research-agent-n30i.onrender.com"; // Change after deployment
+const [file, setFile] = useState(null);
 
 export default function App() {
   const [target, setTarget] = useState('');
