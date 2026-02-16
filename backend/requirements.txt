@@ -8,3 +8,4 @@ markdown2
 weasyprint
 python-docx
 python-dotenv
+pypdf
