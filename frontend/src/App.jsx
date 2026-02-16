@@ -52,10 +52,19 @@ export default function App() {
                 <h2 className="text-xl font-bold">Research Portal</h2>
               </div>
               <input 
-                value={target} onChange={(e)=>setTarget(e.target.value)}
-                placeholder="Target Company Name..."
-                className="w-full bg-slate-800 border border-white/5 rounded-xl p-4 mb-4 focus:outline-none focus:ring-2 ring-blue-500/50 transition-all"
-              />
+  value={target}
+  onChange={(e)=>setTarget(e.target.value)}
+  placeholder="Target Company Name..."
+  className="w-full bg-slate-800 border border-white/5 rounded-xl p-4 mb-4"
+/>
+
+<input
+  type="file"
+  accept=".pdf"
+  onChange={(e)=>setFile(e.target.files[0])}
+  className="w-full bg-slate-800 border border-white/5 rounded-xl p-4 mb-4"
+/>
+
               <button 
                 onClick={runAnalysis} disabled={loading}
                 className="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95"
