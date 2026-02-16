@@ -11,3 +11,4 @@ python-docx
 reportlab
 weasyprint
 langchain_community
+markdown2
