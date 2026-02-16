@@ -1,5 +1,6 @@
 import os
 import operator
+import json
 from typing import Annotated, List, TypedDict
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,7 +13,16 @@ import markdown2
 from weasyprint import HTML
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# --- REFRESHED CORS MIDDLEWARE ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # For production, replace with your frontend URL (e.g. https://your-site.com)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"]
+)
 
 # --- AGENT STATE DEFINITION ---
 class SectionState(TypedDict):
@@ -26,12 +36,18 @@ class OverallState(TypedDict):
     final_report: str
 
 # --- MODELS & TOOLS ---
-llm = ChatAnthropic(model="claude-3-5-sonnet-20240620", api_key=os.getenv("ANTHROPIC_API_KEY"))
-search_tool = TavilySearchResults(max_results=5, api_key=os.getenv("TAVILY_API_KEY"))
+# Updated to stable model version to avoid 404 errors
+llm = ChatAnthropic(
+    model="claude-3-5-sonnet-latest", 
+    anthropic_api_key=os.getenv("ANTHROPIC_API_KEY")
+)
+search_tool = TavilySearchResults(
+    max_results=5, 
+    tavily_api_key=os.getenv("TAVILY_API_KEY")
+)
 
 # --- GRAPH NODES ---
 def planner(state: OverallState):
-    # These match your Word Document sections
     sections = [
         "Section 1: Account Business Overview (Financials/FDIC)",
         "Section 2: Key Business Initiatives (Strategy/Growth)",
@@ -39,10 +55,10 @@ def planner(state: OverallState):
         "Section 4: Relationship & Stakeholders (Executives)",
         "Section 5: Strategic Next Steps (Opportunities)"
     ]
+    # This triggers the parallel 'researcher' instances
     return [Send("researcher", {"section_name": s, "target_company": state['target_company']}) for s in sections]
 
 def researcher(state: SectionState):
-    # Real-time search for each specific section
     query = f"{state['target_company']} {state['section_name']} news 2024 2025"
     search_results = search_tool.invoke(query)
     
@@ -54,8 +70,8 @@ def researcher(state: SectionState):
     return {"research_data": [{"section": state['section_name'], "content": response.content}]}
 
 def writer(state: OverallState):
-    # Aggregates parallel results into one document
     full_text = f"# Strategic Report: {state['target_company']}\n\n"
+    # Sort by section name to keep document order
     sorted_sections = sorted(state['research_data'], key=lambda x: x['section'])
     for sec in sorted_sections:
         full_text += f"## {sec['section']}\n{sec['content']}\n\n"
@@ -66,10 +82,14 @@ builder = StateGraph(OverallState)
 builder.add_node("planner", planner)
 builder.add_node("researcher", researcher)
 builder.add_node("writer", writer)
+
 builder.set_entry_point("planner")
+
+# Correcting the parallel routing logic
 builder.add_conditional_edges("planner", lambda x: x)
 builder.add_edge("researcher", "writer")
 builder.add_edge("writer", END)
+
 graph = builder.compile()
 
 # --- API ENDPOINTS ---
@@ -77,16 +97,24 @@ reports_db = {}
 
 @app.post("/generate")
 async def generate_report(target: str, mine: str):
-    inputs = {"target_company": target, "my_company": mine, "research_data": []}
-    result = graph.invoke(inputs)
-    report_id = target.replace(" ", "_").lower()
-    reports_db[report_id] = result['final_report']
-    return {"id": report_id, "report": result['final_report']}
+    try:
+        inputs = {"target_company": target, "my_company": mine, "research_data": []}
+        result = graph.invoke(inputs)
+        
+        report_id = target.replace(" ", "_").lower()
+        reports_db[report_id] = result['final_report']
+        
+        return {"id": report_id, "report": result['final_report']}
+    except Exception as e:
+        print(f"Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/download/{report_id}")
 async def download_pdf(report_id: str):
     content = reports_db.get(report_id)
-    if not content: raise HTTPException(404)
-    pdf_path = f"{report_id}.pdf"
+    if not content:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    pdf_path = f"/tmp/{report_id}.pdf" # Use /tmp for Render environments
     HTML(string=markdown2.markdown(content)).write_pdf(pdf_path)
     return FileResponse(pdf_path, filename=f"Strategy_Report_{report_id}.pdf")
