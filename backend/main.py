@@ -1,120 +1,129 @@
 import os
-import operator
 import json
+import operator
+import asyncio
 from typing import Annotated, List, TypedDict
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from langchain_anthropic import ChatAnthropic
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph import StateGraph, END
 from langgraph.constants import Send
+
+# Formatting Imports
 import markdown2
 from weasyprint import HTML
+from docx import Document # Requires: pip install python-docx
 
+# --- INITIALIZATION ---
 app = FastAPI()
 
-# --- REFRESHED CORS MIDDLEWARE ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For production, replace with your frontend URL (e.g. https://your-site.com)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"]
+    expose_headers=["Content-Disposition"]
 )
 
-# --- AGENT STATE DEFINITION ---
+llm = ChatAnthropic(model="claude-3-5-sonnet-latest")
+search_tool = TavilySearchResults(max_results=5)
+
+# --- LANGGRAPH STATE DEFINITIONS ---
 class SectionState(TypedDict):
     section_name: str
     target_company: str
 
 class OverallState(TypedDict):
     target_company: str
-    my_company: str
     research_data: Annotated[List[dict], operator.add]
     final_report: str
-
-# --- MODELS & TOOLS ---
-# Updated to stable model version to avoid 404 errors
-llm = ChatAnthropic(
-    model="claude-3-5-sonnet-latest", 
-    anthropic_api_key=os.getenv("ANTHROPIC_API_KEY")
-)
-search_tool = TavilySearchResults(
-    max_results=5, 
-    tavily_api_key=os.getenv("TAVILY_API_KEY")
-)
 
 # --- GRAPH NODES ---
 def planner(state: OverallState):
     sections = [
-        "Section 1: Account Business Overview (Financials/FDIC)",
-        "Section 2: Key Business Initiatives (Strategy/Growth)",
-        "Section 3: Account Tech Landscape (Digital/Vendors)",
-        "Section 4: Relationship & Stakeholders (Executives)",
-        "Section 5: Strategic Next Steps (Opportunities)"
+        "Account Business Overview",
+        "Key Business Initiatives",
+        "Tech Landscape",
+        "Strategic Next Steps"
     ]
-    # This triggers the parallel 'researcher' instances
     return [Send("researcher", {"section_name": s, "target_company": state['target_company']}) for s in sections]
 
 def researcher(state: SectionState):
     query = f"{state['target_company']} {state['section_name']} news 2024 2025"
     search_results = search_tool.invoke(query)
-    
-    prompt = f"""Summarize research for {state['section_name']} regarding {state['target_company']}.
-    Search Results: {search_results}
-    Format: Use clean bullet points. No emojis. Professional tone."""
-    
+    prompt = f"Summarize research for {state['section_name']} of {state['target_company']}. Results: {search_results}"
     response = llm.invoke(prompt)
     return {"research_data": [{"section": state['section_name'], "content": response.content}]}
 
 def writer(state: OverallState):
-    full_text = f"# Strategic Report: {state['target_company']}\n\n"
-    # Sort by section name to keep document order
-    sorted_sections = sorted(state['research_data'], key=lambda x: x['section'])
-    for sec in sorted_sections:
-        full_text += f"## {sec['section']}\n{sec['content']}\n\n"
-    return {"final_report": full_text}
+    report = f"# Strategic Report: {state['target_company']}\n\n"
+    for sec in sorted(state['research_data'], key=lambda x: x['section']):
+        report += f"## {sec['section']}\n{sec['content']}\n\n"
+    return {"final_report": report}
 
-# --- BUILD GRAPH ---
+# --- BUILD THE GRAPH ---
 builder = StateGraph(OverallState)
 builder.add_node("planner", planner)
 builder.add_node("researcher", researcher)
 builder.add_node("writer", writer)
-
 builder.set_entry_point("planner")
-
-# Correcting the parallel routing logic
 builder.add_conditional_edges("planner", lambda x: x)
 builder.add_edge("researcher", "writer")
 builder.add_edge("writer", END)
-
 graph = builder.compile()
 
 # --- API ENDPOINTS ---
 reports_db = {}
 
 @app.post("/research")
-async def generate_report(target: str, mine: str):
-    try:
-        inputs = {"target_company": target, "my_company": mine, "research_data": []}
-        result = graph.invoke(inputs)
-        
-        report_id = target.replace(" ", "_").lower()
-        reports_db[report_id] = result['final_report']
-        
-        return {"id": report_id, "report": result['final_report']}
-    except Exception as e:
-        print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+async def run_research(target_company: str = Form(...), annual_report: UploadFile = None):
+    async def stream_generator():
+        yield json.dumps({"type": "status", "message": "Analyzing Data..."}) + "\n"
+        state = {"target_company": target_company, "research_data": []}
+        async for event in graph.astream(state):
+            for node, output in event.items():
+                if node == "researcher":
+                    section_info = output["research_data"][0]
+                    yield json.dumps({
+                        "type": "section",
+                        "data": {"section_title": section_info["section"], "section_content": section_info["content"]}
+                    }) + "\n"
+                elif node == "writer":
+                    report_id = target_company.replace(" ", "_").lower()
+                    reports_db[report_id] = output["final_report"]
+        yield json.dumps({"type": "complete"}) + "\n"
+    return StreamingResponse(stream_generator(), media_type="text/event-stream")
 
-@app.get("/download/{report_id}")
+# --- EXPORT ENDPOINTS ---
+
+@app.get("/download/pdf/{report_id}")
 async def download_pdf(report_id: str):
     content = reports_db.get(report_id)
-    if not content:
-        raise HTTPException(status_code=404, detail="Report not found")
-    
-    pdf_path = f"/tmp/{report_id}.pdf" # Use /tmp for Render environments
+    if not content: raise HTTPException(status_code=404)
+    pdf_path = f"/tmp/{report_id}.pdf"
     HTML(string=markdown2.markdown(content)).write_pdf(pdf_path)
-    return FileResponse(pdf_path, filename=f"Strategy_Report_{report_id}.pdf")
+    return FileResponse(pdf_path, filename=f"Research_{report_id}.pdf")
+
+@app.get("/download/docx/{report_id}")
+async def download_docx(report_id: str):
+    content = reports_db.get(report_id)
+    if not content: raise HTTPException(status_code=404)
+    
+    doc_path = f"/tmp/{report_id}.docx"
+    doc = Document()
+    
+    # Simple Markdown-to-Docx conversion
+    lines = content.split('\n')
+    for line in lines:
+        if line.startswith('# '):
+            doc.add_heading(line[2:], level=0)
+        elif line.startswith('## '):
+            doc.add_heading(line[3:], level=1)
+        else:
+            doc.add_paragraph(line)
+            
+    doc.save(doc_path)
+    return FileResponse(doc_path, filename=f"Research_{report_id}.docx")
