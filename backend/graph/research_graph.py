@@ -1,5 +1,10 @@
 from langgraph.graph import StateGraph
-from agents import section1, section2, section3, section4, section5, editor
+from agents.section1 import run as section1_run
+from agents.section2 import run as section2_run
+from agents.section3 import run as section3_run
+from agents.section4 import run as section4_run
+from agents.section5 import run as section5_run
+from agents.editor import run as editor_run
 
 def build():
     g = StateGraph(dict)
