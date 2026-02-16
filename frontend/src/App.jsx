@@ -14,15 +14,61 @@ export default function App() {
   const [report, setReport] = useState(null);
   const [reportId, setReportId] = useState(null);
 
-  const runAnalysis = async () => {
-    setLoading(true);
-    try {
-      const res = await axios.post(`${API_BASE}/generate?target=${target}&mine=Speridian`);
-      setReport(res.data.report);
-      setReportId(res.data.id);
-    } catch (err) { alert("Analysis failed. Check API."); }
-    setLoading(false);
-  };
+const runAnalysis = async () => {
+
+  setLoading(true);
+
+  try {
+
+    const formData = new FormData();
+
+    formData.append("target", target);
+
+    formData.append("mine", "Speridian");
+
+    if(file)
+      formData.append("file", file);
+
+    const res = await axios.post(
+
+      `${API_BASE}/generate`,
+
+      formData,
+
+      {
+
+        headers:
+
+        {
+
+          "Content-Type":
+
+          "multipart/form-data"
+
+        }
+
+      }
+
+    );
+
+    setReport(res.data.report);
+
+    setReportId(res.data.id);
+
+  }
+
+  catch(e)
+
+  {
+
+    alert("failed");
+
+  }
+
+  setLoading(false);
+
+};
+
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans relative overflow-hidden">
