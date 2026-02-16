@@ -19,11 +19,15 @@
 
     "framer-motion": "^11.0.0",
 
-    "lucide-react": "^0.445.0"
+    "lucide-react": "^0.445.0",
+
+    "axios": "^1.7.7"
   },
 
   "devDependencies": {
+
     "vite": "^5.0.0",
+
     "@vitejs/plugin-react": "^4.2.0"
   }
 }
