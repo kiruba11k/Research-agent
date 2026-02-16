@@ -6,9 +6,9 @@ import { Search, Cpu, Download, Loader2, FileText } from 'lucide-react';
 import axios from 'axios';
 
 const API_BASE = "https://research-agent-n30i.onrender.com"; // Change after deployment
-const [file, setFile] = useState(null);
 
 export default function App() {
+  const [file, setFile] = useState(null);
   const [target, setTarget] = useState('');
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);
