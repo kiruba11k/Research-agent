@@ -1,56 +1,33 @@
 from agents.base_model import llm
 from tools.web_search import web_search
 from tools.citations import normalize_sources
+from models.schemas import SectionOutput
 
-def run(state):
-    """
-    Section 3: Account Technology Landscape
-    Focus:
-    - Core banking, digital channels, payments, data, security
-    - Named vendors and platforms where publicly visible
-    - Operating and delivery implications
-    """
+def run(state: dict):
+    company = state['target_company']
+    # 1. Technical stack and vendor search
+    query = f"Technology stack, core banking platforms, IT vendors, and digital transformation of {company}"
+    results = web_search(query)
+    citations = normalize_sources(results.get("sources", []))
 
-    query = f"""
-    Technology platforms, digital banking tools, payment systems,
-    vendors, and IT operating model used by {state['target_company']}.
-    Include online banking, mobile, treasury, payments, cards, security,
-    and technology leadership signals.
-    """
-
-    search_results = web_search(query)
-    citations = normalize_sources(search_results["sources"])
-
+    structured_llm = llm.with_structured_output(SectionOutput)
+    
     prompt = f"""
-    Write Section 3: Account Technology Landscape.
+    Write Section 3: Account Technology Landscape for {company}.
+    
+    Focus:
+    - Core infrastructure and digital channels (mobile/online).
+    - Known technology vendors (e.g., AWS, Azure, Finastra, FIS).
+    - Recent IT investments or leadership signals.
 
     Rules:
-    - Cite every factual claim using [n]
-    - Use only information supported by sources
-    - No em dashes
-    - Executive tone, not marketing language
-    - Group related technologies together
-    - Explain operational implications where relevant
-    - Do not speculate beyond public signals
+    - Group related technologies logically.
+    - Cite claims with [n].
+    - NO em dashes.
+    - Avoid marketing fluff; focus on operational facts.
 
-    Sources:
-    {citations}
+    Web Sources: {citations}
     """
 
-    content = llm.invoke(prompt).content
-
-    confidence_prompt = f"""
-    Based on the credibility of sources, consistency across sources,
-    and clarity of public disclosures, score confidence from 0 to 1.
-    Return only a number.
-    """
-
-    confidence = float(llm.invoke(confidence_prompt).content.strip())
-
-    return {
-        "section3": {
-            "content": content,
-            "citations": citations,
-            "confidence": confidence
-        }
-    }
+    response = structured_llm.invoke(prompt)
+    return {"sections": {"section3": response}}
