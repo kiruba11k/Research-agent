@@ -1,9 +1,8 @@
 import os
 from langchain_anthropic import ChatAnthropic
 
-# Using 3.5 Sonnet: Best balance of speed, cost, and complex reasoning
+# LangChain will automatically look for ANTHROPIC_API_KEY in your Render Env
 llm = ChatAnthropic(
     model="claude-3-5-sonnet-latest",
-    temperature=0.2,  # Zero for factual accuracy
-    anthropic_api_key=os.getenv("ANTHROPIC_API_KEY")
+    temperature=0.2
 )
